@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"go-demo/models"
+	"io"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -47,7 +49,14 @@ func (h *Handler) SearchPosts(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	defer res.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			h.Logger.Err(err).Msg("elasticsearch error")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}(res.Body)
 	if res.IsError() {
 		var e map[string]interface{}
 		if err := json.NewDecoder(res.Body).Decode(&e); err != nil {
@@ -72,4 +81,21 @@ func (h *Handler) SearchPosts(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": r["hits"]})
+}
+
+func (h *Handler) DeletePost(c *gin.Context) {
+	var postIdStr = c.Param("id")
+	postId, err := strconv.Atoi(postIdStr)
+	if err != nil {
+		// If conversion fails, return a bad request response
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid post ID"})
+		return
+	}
+	err = h.DB.DeletePost(postId)
+	if err != nil {
+		h.Logger.Err(err).Msg("could not save post")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("could not save post: %s", err.Error())})
+	} else {
+		c.JSON(http.StatusOK, gin.H{"message": "success"})
+	}
 }
